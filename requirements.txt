@@ -1,0 +1,3 @@
+aiohttp==2.2.5
+aiomysql==0.0.9
+beautifulsoup4==4.6.0
