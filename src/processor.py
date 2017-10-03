@@ -10,12 +10,26 @@ class Match:
 class EventGroup:
     def __init__(self, root):
         self.root = root
-        self.events = [Event.from_element_root(e, root.tag) for tc in root.findall('time_slice') for e in tc]
+        self.events = [Event.from_element_root(e, root.tag) for tc in root.findall('time_slice')
+                       for e in tc.findall('event')]
 
 
 class Event:
-    def __init__(self, element_root):
-        self.root = element_root
+    concrete_type = {
+        'action_type': str,
+        'headed': bool,
+        'mins': int,
+        'minsec': int,
+        'player_id': int,
+        'secs': int,
+        'team_id': int,
+        'type': str
+    }
+
+    def __init__(self, root):
+        self.root = root
+        for k, v in root.items():
+            setattr(self, k, self.concrete_type[k](v))
 
     @classmethod
     def from_element_root(cls, root, tag):
@@ -23,7 +37,9 @@ class Event:
 
 
 class GoalKeeping(Event):
-    pass
+    def __init__(self, root):
+        super().__init__(root)
+        self.pos = tuple(float(p) for p in root.text.split(','))
 
 
 class GoalAttempt(Event):
