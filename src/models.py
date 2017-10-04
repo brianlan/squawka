@@ -1,25 +1,65 @@
+import datetime
+
 from .settings import logger
 
 
 class Player:
-    def __init__(self, player_id):
-        if isinstance(player_id, str):
-            player_id = int(player_id)
-        self.id = player_id
+    def __init__(self, root):
+        self.id = int(root.attrib.get('id'))
+        self.name = root.find('name').text.strip()
+        self.dob = datetime.datetime.strptime(root.find('dob').text, '%d/%m/%Y')  # date of birth
+        self.weight = float(root.find('weight').text) if root.find('weight').text != 'Unknown' else None
+        self.height = float(root.find('height').text) if root.find('height').text != 'Unknown' else None
+        self.country = root.find('country').text.strip()
 
     def __repr__(self):
         return f'Player-{self.id}'
 
 
+class PlayerPool:
+    pool = {}
+
+    def __init__(self):
+        pass
+
+    def __len__(self):
+        return len(self.pool)
+
+    @classmethod
+    def update(cls, root):
+        [cls.push(p) for p in root]
+
+    @classmethod
+    def get(cls, player_id):
+        return cls.pool.get(str(player_id))
+
+    @classmethod
+    def push(cls, root):
+        player = Player(root)
+        cls.pool.update({str(player.id): player})
+
+    @classmethod
+    def clear(cls):
+        cls.pool = {}
+
+
 class Match:
+    class Participant:
+        """It's different from Player. It stores player info related only to this match, while PlayerPool is static."""
+        def __init__(self, root):
+            self.init_loc_x = float(root.find('x_loc').text)
+            self.init_loc_y = float(root.find('y_loc').text)
+            self.position = root.find('position').text
+            self.player = PlayerPool.get(root.attrib.get('id'))
+
     def __init__(self, root):
-        self.root = root
+        PlayerPool.update(root.find('data_panel').find('players'))
+        self.participants = [self.Participant(p) for p in root.find('data_panel').find('players')]
         self.event_groups = {f.tag: EventGroup(f) for f in root.find('data_panel').find('filters')}
 
 
 class EventGroup:
     def __init__(self, root):
-        self.root = root
         self.events = [Event.from_element_root(e, root.tag) for tc in root.findall('time_slice')
                        for e in tc.findall('event')]
 
@@ -57,13 +97,12 @@ class Event:
     }
 
     def __init__(self, root):
-        self.root = root
         self.counterparty = None
         for k, v in root.items():
             if k == 'player_id':
-                self.player = Player(v)
+                self.player = PlayerPool.get(v)
             elif k == 'other_player':
-                self.counterparty = Player(v)
+                self.counterparty = PlayerPool.get(v)
             else:
                 try:
                     super().__setattr__(k, self.attr_key_type[k](v))
@@ -111,10 +150,11 @@ class ActionArea(Event):
 
 
 class HeadedDual(Event):
+    """Only reflects the headed duals that a player won, failed will only stored to the counterparty, not current one"""
     def __init__(self, root):
         super().__init__(root)
         self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
-        self.counterparty = Player(root.find('otherplayer').text)
+        self.counterparty = PlayerPool.get(root.find('otherplayer').text)
 
 
 class Interception(Event):
@@ -142,8 +182,8 @@ class Tackle(Event):
     def __init__(self, root):
         super().__init__(root)
         self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
-        self.player = Player(root.find('tackler').text)
-        self.counterparty = Player(root.attrib['player_id'])
+        self.player = PlayerPool.get(root.find('tackler').text)
+        self.counterparty = PlayerPool.get(root.attrib['player_id'])
 
 
 class Cross(Event):
@@ -190,7 +230,7 @@ class Foul(Event):
     def __init__(self, root):
         super().__init__(root)
         self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
-        self.counterparty = Player(root.find('otherplayer').text)
+        self.counterparty = PlayerPool.get(root.find('otherplayer').text)
 
 
 class Card(Event):
