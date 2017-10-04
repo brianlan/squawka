@@ -6,8 +6,6 @@ sys.path.append('..')
 from aiohttp import ClientSession
 import pytest
 
-from settings import FIXED_HEADERS
-
 
 @pytest.mark.asyncio
 async def test_any(event_loop):

@@ -1,4 +1,4 @@
-from .processor import process_entry_page
+from .models import process_entry_page
 
 
 if __name__ == '__main__':

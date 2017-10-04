@@ -1,5 +1,3 @@
-from aiohttp import ClientSession
-
 from .settings import logger
 
 
@@ -62,23 +60,27 @@ class Event:
         self.root = root
         self.counterparty = None
         for k, v in root.items():
-            try:
-                setattr(self, k, self.attr_key_type[k](v))
-            except KeyError as e:
-                logger.warn('Type of attr-key {} not been set yet, use str instead. err_msg: {}'.format(k, e))
-                setattr(self, k, v)
+            if k == 'player_id':
+                self.player = Player(v)
+            elif k == 'other_player':
+                self.counterparty = Player(v)
+            else:
+                try:
+                    super().__setattr__(k, self.attr_key_type[k](v))
+                except KeyError as e:
+                    logger.warn('Type of attr-key {} not been set yet, use str instead. err_msg: {}'.format(k, e))
+                    super().__setattr__(k, v)
 
-    def __setattr__(self, key, value):
-        if key == 'player_id':
-            super().__setattr__('player', Player(value))
-        elif key == 'other_player':
-            super().__setattr__('counterparty', Player(value))
-        else:
-            super().__setattr__(key, value)
+        self.minsec = self.__dict__.get('minsec') or self.mins * 60 + self.secs
 
     @classmethod
     def from_element_root(cls, root, tag):
         return event_class[tag](root)
+
+    def __repr__(self):
+        base = f'[{self.mins:2}:{self.secs:2}] {self.player} {self.__class__.__name__.lower()}'
+        final = base + (f' at {self.start}' if self.start == self.end else f' from {self.start} to {self.end}')
+        return final
 
 
 class GoalKeeping(Event):
@@ -88,10 +90,19 @@ class GoalKeeping(Event):
 
 
 class GoalAttempt(Event):
+    """gmouth_y and gmouth_z are in YZ plane (Z is the height of a shot when crossing the gate line),
+    stored in self.yz"""
     def __init__(self, root):
         super().__init__(root)
-        self.start = tuple(float(p) for p in root.find('start').text.split(','))
-        self.end = tuple(float(p) for p in root.find('end').text.split(','))
+        coordinates = root.find('coordinates')
+        self.start = float(coordinates.attrib['start_x']), float(coordinates.attrib['start_y'])
+
+        gmouth_y = float(coordinates.attrib['gmouth_y']) if coordinates.attrib['gmouth_y'] != "" else None
+        gmouth_z = float(coordinates.attrib['gmouth_z']) if coordinates.attrib['gmouth_z'] != "" else None
+        self.yz = gmouth_y, gmouth_z
+
+        # if end_x and end_y doesn't exist, it means the shot is off-target.
+        self.end = float(coordinates.attrib.get('end_x') or 100.0), float(coordinates.attrib.get('end_y') or gmouth_y)
 
 
 class ActionArea(Event):
@@ -126,15 +137,13 @@ class Pass(Event):
         self.start = tuple(float(p) for p in root.find('start').text.split(','))
         self.end = tuple(float(p) for p in root.find('end').text.split(','))
 
-    def __repr__(self):
-        return f'[{self.mins}:{self.secs}] {self.player} passed {self.start} -> {self.end}'
-
 
 class Tackle(Event):
     def __init__(self, root):
         super().__init__(root)
         self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
-        self.counterparty = Player(root.find('tackler').text)
+        self.player = Player(root.find('tackler').text)
+        self.counterparty = Player(root.attrib['player_id'])
 
 
 class Cross(Event):
