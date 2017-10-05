@@ -28,9 +28,18 @@ class Participant:
         self.player = Player(root)
         # self.player = PlayerPool.get(root.attrib.get('id'))
 
-    def save(self):
+    async def _save_players(self):
         # TODO:
         pass
+
+    async def _save_paticipation(self):
+        # TODO:
+        pass
+
+    async def save(self):
+        self._save_players()
+        self._save_paticipation()
+
 
 # class PlayerPool:
 #     pool = {}
@@ -68,7 +77,7 @@ class Team:
     def __repr__(self):
         return self.name
 
-    def save(self):
+    async def save(self):
         # TODO:
         pass
 
@@ -95,11 +104,12 @@ class Match:
     def __repr__(self):
         return f'{self.summary}'
 
-    def save(self):
+    async def save(self):
         self.home_team.save()
         self.away_team.save()
         [p.save() for p in self.participants]
-        [eg.save() for eg in self.event_groups]
+        all_events = [e for eg in self.event_groups for e in eg]
+        # TODO: insert all_events using insertmany
 
 
 class EventGroup:
@@ -113,9 +123,6 @@ class EventGroup:
 
     def __repr__(self):
         return f'{self.__class__.__name__} ({len(self.events)})'
-
-    def save(self):
-        [e.save() for e in self.events]
 
 
 class Event:
@@ -172,10 +179,6 @@ class Event:
     @classmethod
     def from_element_root(cls, root, tag, match_id):
         return event_class[tag](root, match_id)
-
-    def save(self):
-        # TODO:
-        pass
 
 
 class GoalKeeping(Event):

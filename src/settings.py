@@ -1,14 +1,77 @@
 import logging
 import datetime
 import os
+import yaml
 
 
-FIXED_HEADERS = {'Host': 'www.squawka.com',
-                 'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; rv:26.0) Gecko/20100101 Firefox/26.0',
-                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-                 'Accept-Encoding': 'deflate',
-                 'Connection': 'keep-alive'}
+#####################
+#  Load Auth file   #
+#####################
+with open('auth.yml', 'r') as f:
+    AUTH = yaml.load(f)
 
+#####################################
+#   Settings for different Stages   #
+#####################################
+TEST_CONFIG = {
+    'data_db': {
+        'mysql': {
+            'host': 'mysql',
+            'port': 3306,
+        }
+    }
+}
+
+DOCKER_COMPOSE_DEPLOY_CONFIG = {
+    'data_db': {
+        'mysql': {
+            'host': 'mysql',
+            'port': 3306,
+        }
+    }
+}
+
+FULL_CONFIG = {
+    'prod': {
+        'deploy': DOCKER_COMPOSE_DEPLOY_CONFIG,
+        'test': TEST_CONFIG
+    },
+
+    'rc': {
+        'deploy': DOCKER_COMPOSE_DEPLOY_CONFIG,
+        'test': TEST_CONFIG
+    },
+
+    'dev': {
+        'deploy': DOCKER_COMPOSE_DEPLOY_CONFIG,
+        'test': TEST_CONFIG
+    },
+
+    'local': {
+        'deploy': {
+            'data_db': {
+                'mysql': {
+                    'host': 'localhost',
+                    'port': 33306,
+                    'username': AUTH['localhost_infra_mysql']['username'],
+                    'password': AUTH['localhost_infra_mysql']['password']
+                }
+            }
+        },
+        'test': TEST_CONFIG
+    }
+}
+
+CONFIG = FULL_CONFIG[os.environ['SQUAWKA_RUNTIME_STAGE']][os.environ['SQUAWKA_RUNTIME_MODE']]
+
+
+def get_config(stage, mode):
+    return FULL_CONFIG[stage][mode]
+
+
+#####################
+#   Create logger   #
+#####################
 LOG_DIR = 'log'
 
 logger = logging.getLogger('skynet-portal')
