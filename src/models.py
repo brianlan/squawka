@@ -1,3 +1,4 @@
+import re
 import datetime
 
 from .settings import logger
@@ -6,6 +7,7 @@ from .settings import logger
 class Player:
     def __init__(self, root):
         self.id = int(root.attrib.get('id'))
+        self.team_id = int(root.attrib.get('team_id'))
         self.name = root.find('name').text.strip()
         self.dob = datetime.datetime.strptime(root.find('dob').text, '%d/%m/%Y')  # date of birth
         self.weight = float(root.find('weight').text) if root.find('weight').text != 'Unknown' else None
@@ -16,51 +18,94 @@ class Player:
         return f'Player-{self.id}'
 
 
-class PlayerPool:
-    pool = {}
+class Participant:
+    """It's different from Player. It stores player info related only to this match, while PlayerPool is static."""
+    def __init__(self, root, match_id):
+        self.match_id = match_id
+        self.init_loc_x = float(root.find('x_loc').text)
+        self.init_loc_y = float(root.find('y_loc').text)
+        self.position = root.find('position').text
+        self.player = Player(root)
+        # self.player = PlayerPool.get(root.attrib.get('id'))
 
-    def __init__(self):
+    def save(self):
+        # TODO:
         pass
 
-    def __len__(self):
-        return len(self.pool)
+# class PlayerPool:
+#     pool = {}
+#
+#     def __init__(self):
+#         pass
+#
+#     def __len__(self):
+#         return len(self.pool)
+#
+#     @classmethod
+#     def update(cls, root):
+#         [cls.push(p) for p in root]
+#
+#     @classmethod
+#     def get(cls, player_id):
+#         return cls.pool.get(str(player_id))
+#
+#     @classmethod
+#     def push(cls, root):
+#         player = Player(root)
+#         cls.pool.update({str(player.id): player})
+#
+#     @classmethod
+#     def clear(cls):
+#         cls.pool = {}
 
-    @classmethod
-    def update(cls, root):
-        [cls.push(p) for p in root]
 
-    @classmethod
-    def get(cls, player_id):
-        return cls.pool.get(str(player_id))
+class Team:
+    def __init__(self, root):
+        self.id = int(root.attrib.get('id'))
+        self.name = root.find('long_name').text.strip()
+        self.short_name = root.find('short_name').text.strip()
 
-    @classmethod
-    def push(cls, root):
-        player = Player(root)
-        cls.pool.update({str(player.id): player})
+    def __repr__(self):
+        return self.name
 
-    @classmethod
-    def clear(cls):
-        cls.pool = {}
+    def save(self):
+        # TODO:
+        pass
 
 
 class Match:
-    class Participant:
-        """It's different from Player. It stores player info related only to this match, while PlayerPool is static."""
-        def __init__(self, root):
-            self.init_loc_x = float(root.find('x_loc').text)
-            self.init_loc_y = float(root.find('y_loc').text)
-            self.position = root.find('position').text
-            self.player = PlayerPool.get(root.attrib.get('id'))
+    def __init__(self, root, league_id, match_id):
+        game = root.find('data_panel').find('game')
+        teams = list(game.findall('team'))
+        self.id = match_id
+        self.league_id = league_id
+        self.summary = root.find('data_panel').find('system').find('headline').text.strip()
+        self.date = datetime.datetime.strptime(game.find('kickoff').text, '%a, %d %b %Y %H:%M:%S %z')
+        self.stadium = game.find('venue').text.strip()
+        self.home_team = Team(teams[0])
+        self.away_team = Team(teams[1])
 
-    def __init__(self, root):
-        PlayerPool.update(root.find('data_panel').find('players'))
-        self.participants = [self.Participant(p) for p in root.find('data_panel').find('players')]
-        self.event_groups = {f.tag: EventGroup(f) for f in root.find('data_panel').find('filters')}
+        m = re.search(r'(\d+) - (\d+)', self.summary)
+        self.home_score, self.away_score = int(m.group(1)), int(m.group(2))
+
+        # PlayerPool.update(root.find('data_panel').find('players'))
+        self.participants = [Participant(p, self.id) for p in root.find('data_panel').find('players')]
+        self.event_groups = {f.tag: EventGroup(f, self.id) for f in root.find('data_panel').find('filters')}
+
+    def __repr__(self):
+        return f'{self.summary}'
+
+    def save(self):
+        self.home_team.save()
+        self.away_team.save()
+        [p.save() for p in self.participants]
+        [eg.save() for eg in self.event_groups]
 
 
 class EventGroup:
-    def __init__(self, root):
-        self.events = [Event.from_element_root(e, root.tag) for tc in root.findall('time_slice')
+    def __init__(self, root, match_id):
+        self.match_id = match_id
+        self.events = [Event.from_element_root(e, root.tag, match_id) for tc in root.findall('time_slice')
                        for e in tc.findall('event')]
 
     def __iter__(self):
@@ -68,6 +113,9 @@ class EventGroup:
 
     def __repr__(self):
         return f'{self.__class__.__name__} ({len(self.events)})'
+
+    def save(self):
+        [e.save() for e in self.events]
 
 
 class Event:
@@ -96,13 +144,17 @@ class Event:
         'a': bool
     }
 
-    def __init__(self, root):
-        self.counterparty = None
+    def __init__(self, root, match_id):
+        self.match_id = match_id
+        self.event_type = self.__class__.__name__
+        self.counterparty_id = None
         for k, v in root.items():
             if k == 'player_id':
-                self.player = PlayerPool.get(v)
+                self.player_id = int(v)
+                # self.player = PlayerPool.get(v)
             elif k == 'other_player':
-                self.counterparty = PlayerPool.get(v)
+                self.counterparty_id = int(v)
+                # self.counterparty = PlayerPool.get(v)
             else:
                 try:
                     super().__setattr__(k, self.attr_key_type[k](v))
@@ -112,27 +164,31 @@ class Event:
 
         self.minsec = self.__dict__.get('minsec') or self.mins * 60 + self.secs
 
-    @classmethod
-    def from_element_root(cls, root, tag):
-        return event_class[tag](root)
-
     def __repr__(self):
-        base = f'[{self.mins:2}:{self.secs:2}] {self.player} {self.__class__.__name__.lower()}'
+        base = f'[{self.mins:2}:{self.secs:2}] Player-{self.player_id} {self.__class__.__name__.lower()}'
         final = base + (f' at {self.start}' if self.start == self.end else f' from {self.start} to {self.end}')
         return final
 
+    @classmethod
+    def from_element_root(cls, root, tag, match_id):
+        return event_class[tag](root, match_id)
+
+    def save(self):
+        # TODO:
+        pass
+
 
 class GoalKeeping(Event):
-    def __init__(self, root):
-        super().__init__(root)
+    def __init__(self, root, match_id):
+        super().__init__(root, match_id)
         self.start = self.end = tuple(float(p) for p in root.text.split(','))
 
 
 class GoalAttempt(Event):
     """gmouth_y and gmouth_z are in YZ plane (Z is the height of a shot when crossing the gate line),
     stored in self.yz"""
-    def __init__(self, root):
-        super().__init__(root)
+    def __init__(self, root, match_id):
+        super().__init__(root, match_id)
         coordinates = root.find('coordinates')
         self.start = float(coordinates.attrib['start_x']), float(coordinates.attrib['start_y'])
 
@@ -151,52 +207,55 @@ class ActionArea(Event):
 
 class HeadedDual(Event):
     """Only reflects the headed duals that a player won, failed will only stored to the counterparty, not current one"""
-    def __init__(self, root):
-        super().__init__(root)
+    def __init__(self, root, match_id):
+        super().__init__(root, match_id)
         self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
-        self.counterparty = PlayerPool.get(root.find('otherplayer').text)
+        self.counterparty_id = int(root.find('otherplayer').text)
+        # self.counterparty = PlayerPool.get(root.find('otherplayer').text)
 
 
 class Interception(Event):
-    def __init__(self, root):
-        super().__init__(root)
+    def __init__(self, root, match_id):
+        super().__init__(root, match_id)
         self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
 
 
 class Clearance(Event):
     """There's a boolean tag 'headed' to identify whether the clearence is done by head."""
-    def __init__(self, root):
-        super().__init__(root)
+    def __init__(self, root, match_id):
+        super().__init__(root, match_id)
         self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
 
 
 class Pass(Event):
     """There's tagging on each pass event, such as long_ball, assist."""
-    def __init__(self, root):
-        super().__init__(root)
+    def __init__(self, root, match_id):
+        super().__init__(root, match_id)
         self.start = tuple(float(p) for p in root.find('start').text.split(','))
         self.end = tuple(float(p) for p in root.find('end').text.split(','))
 
 
 class Tackle(Event):
-    def __init__(self, root):
-        super().__init__(root)
+    def __init__(self, root, match_id):
+        super().__init__(root, match_id)
         self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
-        self.player = PlayerPool.get(root.find('tackler').text)
-        self.counterparty = PlayerPool.get(root.attrib['player_id'])
+        self.player_id = int(root.find('tackler').text)
+        self.counterparty_id = int(root.attrib['player_id'])
+        # self.player = PlayerPool.get(root.find('tackler').text)
+        # self.counterparty = PlayerPool.get(root.attrib['player_id'])
 
 
 class Cross(Event):
-    def __init__(self, root):
-        super().__init__(root)
+    def __init__(self, root, match_id):
+        super().__init__(root, match_id)
         self.start = tuple(float(p) for p in root.find('start').text.split(','))
         self.end = tuple(float(p) for p in root.find('end').text.split(','))
 
 
 class Corner(Event):
     """swere could be inward / outward, which means the curve direction of a corner"""
-    def __init__(self, root):
-        super().__init__(root)
+    def __init__(self, root, match_id):
+        super().__init__(root, match_id)
         self.start = tuple(float(p) for p in root.find('start').text.split(','))
         self.end = tuple(float(p) for p in root.find('end').text.split(','))
 
@@ -221,28 +280,29 @@ class SetPiece(Event):
 
 class TakeOn(Event):
     """TakeOn means one player takes the ball to pass the defence of another player."""
-    def __init__(self, root):
-        super().__init__(root)
+    def __init__(self, root, match_id):
+        super().__init__(root, match_id)
         self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
 
 
 class Foul(Event):
-    def __init__(self, root):
-        super().__init__(root)
+    def __init__(self, root, match_id):
+        super().__init__(root, match_id)
         self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
-        self.counterparty = PlayerPool.get(root.find('otherplayer').text)
+        self.counterparty_id = int(root.find('otherplayer').text)
+        # self.counterparty = PlayerPool.get(root.find('otherplayer').text)
 
 
 class Card(Event):
-    def __init__(self, root):
-        super().__init__(root)
+    def __init__(self, root, match_id):
+        super().__init__(root, match_id)
         self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
         self.card_type = root.find('card').text
 
 
 class Block(Event):
-    def __init__(self, root):
-        super().__init__(root)
+    def __init__(self, root, match_id):
+        super().__init__(root, match_id)
         if root.find('loc'):
             self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
         elif root.find('start') and root.find('end'):
@@ -250,15 +310,15 @@ class Block(Event):
 
 
 class ExtraHeatMap(Event):
-    def __init__(self, root):
-        super().__init__(root)
+    def __init__(self, root, match_id):
+        super().__init__(root, match_id)
         self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
 
 
 class BallOut(Event):
     """Ball-Out means a player caused the ball going out of the boundary."""
-    def __init__(self, root):
-        super().__init__(root)
+    def __init__(self, root, match_id):
+        super().__init__(root, match_id)
         self.start = tuple(float(p) for p in root.find('start').text.split(','))
         self.end = tuple(float(p) for p in root.find('end').text.split(','))
 
