@@ -220,10 +220,30 @@ class Event(DBModel):
     __table_name__ = 'event'
     __pk__ = ['id']
 
-    attr_key_type = {'action_type': str, 'headed': bool, 'mins': int, 'minsec': int, 'player_id': int, 'secs': int,
-                     'team_id': int, 'type': str, 'injurytime_play': bool, 'uid': str, 'throw_ins': bool, 'team': int,
-                     'other_player': int, 'other_team': int, 'shot_player': int, 'shot_team': int, 'ot_id': int,
-                     'ot_outcome': bool, 'gz': float, 'gy': float, 'k': bool, 'a': bool}
+    attr_key_type = {
+        'action_type': str,
+        'headed': bool,
+        'mins': int,
+        'minsec': int,
+        'player_id': int,
+        'secs': int,
+        'team_id': int,
+        'type': str,
+        'injurytime_play': bool,
+        'uid': str,
+        'throw_ins': bool,
+        'team': int,
+        'other_player': int,
+        'other_team': int,
+        'shot_player': int,
+        'shot_team': int,
+        'ot_id': int,
+        'ot_outcome': bool,
+        'gz': float,
+        'gy': float,
+        'k': bool,
+        'a': bool
+    }
 
     def __init__(self, root, match_id):
         self.match_id = match_id
