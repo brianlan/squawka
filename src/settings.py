@@ -7,7 +7,7 @@ import yaml
 #####################
 #  Load Auth file   #
 #####################
-with open('auth.yml', 'r') as f:
+with open('../../auth.yml', 'r') as f:
     AUTH = yaml.load(f)
 
 #####################################
@@ -50,12 +50,10 @@ FULL_CONFIG = {
     'local': {
         'deploy': {
             'data_db': {
-                'mysql': {
-                    'host': 'localhost',
-                    'port': 33306,
-                    'username': AUTH['localhost_infra_mysql']['username'],
-                    'password': AUTH['localhost_infra_mysql']['password']
-                }
+                'host': 'localhost',
+                'port': 33306,
+                'username': AUTH['localhost_infra_mysql']['username'],
+                'password': AUTH['localhost_infra_mysql']['password']
             }
         },
         'test': TEST_CONFIG
