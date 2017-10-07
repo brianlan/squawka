@@ -32,6 +32,18 @@ class DBModel:
     __static_fields__ = []
     __references__ = []
 
+    def __getattr__(self, name):
+        try:
+            obj = eval(f'self.{name[:-2]}')
+        except NameError as e:
+            raise AttributeError(e)
+
+        if isinstance(obj, Coordinate):
+            if name[-2:] in ['_0', '_1']:
+                return eval(f'self.{name[:-2]}.x{name[-1:]}')
+
+        return super().__getattr__(name)
+
     @staticmethod
     def _properize(val):
         if isinstance(val, int) or isinstance(val, float):
@@ -41,9 +53,11 @@ class DBModel:
         else:
             return f"'{val}'"
 
-    def _generate_db_field_names(self):
-        ref_ids = [f'{r}_id' for r in self.__references__]
-        return ','.join([f'`{f}`' for f in ref_ids + self.__static_fields__ + self.__pk__])
+    def _generate_db_field_names(self, include_pk=True):
+        all_field_names = [f'{r}_id' for r in self.__references__] \
+                          + self.__static_fields__ \
+                          + (self.__pk__ if include_pk else [])
+        return ','.join([f'`{f}`' for f in all_field_names])
 
     def _generate_db_field_values(self, include_pk=True):
         all_field_names = [f'{r}.id' for r in self.__references__] \
@@ -58,15 +72,26 @@ class DBModel:
         all_field_kv = {**proper_ref_kv, **{f: self._properize(eval(f'self.{f}')) for f in static_field_names}}
         return ','.join([f"`{k}`={v}" for k, v in all_field_kv.items()])
 
-    async def save(self, loop):
+    async def save(self, loop, include_pk=True):
         """It saves the object into DB by performing an upsert operation."""
         pool = await DBConnection.get_pool(loop)
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(f"INSERT INTO `{self.__table_name__}` ({self._generate_db_field_names()}) "
-                                  f"values ({self._generate_db_field_values()}) "
-                                  f"on duplicate key update {self._generate_db_field_name_value_pairs(False)}")
+                sql = f"INSERT INTO `{self.__table_name__}` ({self._generate_db_field_names(include_pk=include_pk)}) " \
+                      f"values ({self._generate_db_field_values(include_pk=include_pk)}) " \
+                      f"on duplicate key update {self._generate_db_field_name_value_pairs(False)}"
+                logger.debug(sql)
+                await cur.execute(sql)
                 await conn.commit()
+
+
+class Coordinate:
+    def __init__(self, x0, x1):
+        self.x0 = float(x0)
+        self.x1 = float(x1)
+
+    def __repr__(self):
+        return f'({self.x0}, {self.x1})'
 
 
 class Player(DBModel):
@@ -88,22 +113,25 @@ class Player(DBModel):
 
 
 class Participant(DBModel):
+    __table_name__ = 'participation'
+    __pk__ = ['']
+    __static_fields__ = ['init_loc_0', 'init_loc_1', 'position', 'team_id']
+    __references__ = ['match', 'player']
+
     """It's different from Player. It stores player info related only to this match, while Player is static."""
-    def __init__(self, root, match_id):
-        self.match_id = match_id
-        self.team_id = int(root.attrib.get('team_id'))
-        self.init_loc_x = float(root.find('x_loc').text)
-        self.init_loc_y = float(root.find('y_loc').text)
-        self.position = root.find('position').text
+    def __init__(self, root, match):
+        self.match = match
         self.player = Player(root)
+        self.team_id = int(root.attrib.get('team_id'))
+        self.init_loc = Coordinate(root.find('x_loc').text, root.find('y_loc').text)
+        self.position = root.find('position').text.strip()
         # self.player = PlayerPool.get(root.attrib.get('id'))
 
     async def _save_players(self, loop):
-        self.player.save(loop)
+        await self.player.save(loop)
 
     async def _save_paticipation(self, loop):
-        # TODO:
-        pass
+        await super().save(loop, include_pk=False)
 
     async def save(self, loop):
         await self._save_players(loop)
@@ -172,7 +200,7 @@ class Match(DBModel):
         self.home_score, self.away_score = int(m.group(1)), int(m.group(2))
 
         # PlayerPool.update(root.find('data_panel').find('players'))
-        self.participants = [Participant(p, self.id) for p in root.find('data_panel').find('players')]
+        self.participants = [Participant(p, self) for p in root.find('data_panel').find('players')]
         self.event_groups = [EventGroup(f, self.id) for f in root.find('data_panel').find('filters')]
 
     def __repr__(self):
@@ -192,7 +220,7 @@ class Match(DBModel):
         await self.home_team.save(loop)
         await self.away_team.save(loop)
         await self._save_match(loop)
-        # [await p.save(loop) for p in self.participants]
+        [await p.save(loop) for p in self.participants]
         # all_events = [e for eg in self.event_groups for e in eg]
         # TODO: insert all_events using insertmany
 

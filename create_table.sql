@@ -25,9 +25,10 @@ create table `participation` (
     `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
     `player_id` int(11),
     `match_id` int(11),
-    `init_loc_x` float(11),
-    `init_loc_y` float(11),
-    `position` varchar(8),
+    `team_id` int(11),
+    `init_loc_0` float(11),
+    `init_loc_1` float(11),
+    `position` varchar(32),
     PRIMARY KEY (`id`)
 );
 
@@ -52,13 +53,13 @@ create table `event` (
     `minsec` int(11) NOT NULL,
     `event_type` varchar(32),
 
-    `start_x` float,
-    `start_y` float,
-    `end_x` float,
-    `end_y` float,
+    `start_0` float,
+    `start_1` float,
+    `end_0` float,
+    `end_1` float,
 
-    `yz_plane_pt_x` float,
-    `yz_plane_pt_y` float,
+    `yz_plane_pt_0` float,
+    `yz_plane_pt_1` float,
 
     `a` tinyint(1),
     `action_type` varchar(32),
