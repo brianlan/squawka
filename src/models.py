@@ -5,6 +5,7 @@ import aiomysql
 
 from .settings import logger, CONFIG
 from .error import EventGroupNameNotFound
+from .utils import flatten
 
 
 class DBConnection:
@@ -53,18 +54,21 @@ class DBModel:
         else:
             return f"'{val}'"
 
-    def _get_field_name_value_pairs(self):
-        return {f: self._properize(getattr(self, f)) for f in self.__static_fields__ + self.__pk__}
+    def _get_field_name_value_pairs(self, static_fields, pk, id_auto_increment):
+        all_cols = set(static_fields + pk) - ({'id'} if id_auto_increment else set())
+        return {f: self._properize(getattr(self, f)) for f in all_cols}
 
-    async def save(self, loop):
+    async def save(self, loop, static_fields=None, pk=None, id_auto_increment=False):
         """It saves the object into DB by performing an upsert operation."""
+        static_fields = static_fields or self.__static_fields__
+        pk = pk or self.__pk__
         pool = await DBConnection.get_pool(loop)
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
-                pairs = self._get_field_name_value_pairs()
-                col_names = ','.join([f'`{k}`' for k, v in pairs.items()])
-                col_values = ','.join([v for k, v in pairs.items()])
-                col_name_values = ','.join([f'`{k}`={v}' for k, v in pairs.items() if k not in self.__pk__])
+                pairs = self._get_field_name_value_pairs(static_fields, pk, id_auto_increment)
+                col_names = ','.join([f'`{k}`' for k in pairs.keys()])
+                col_values = ','.join([v for v in pairs.values()])
+                col_name_values = ','.join([f'`{k}`={v}' for k, v in pairs.items() if k not in pk])
                 sql = f"INSERT INTO `{self.__table_name__}` ({col_names}) " \
                       f"values ({col_values}) " \
                       f"on duplicate key update {col_name_values}"
@@ -75,7 +79,7 @@ class DBModel:
 
 class Coordinate:
     def __init__(self, x0, x1):
-        self.x = float(x0), float(x1)
+        self.x = None if x0 is None else float(x0), None if x1 is None else float(x1)
 
     def __repr__(self):
         return f'({self.x[0]}, {self.x[1]})'
@@ -118,7 +122,7 @@ class Participant(DBModel):
     async def _save_paticipation(self, loop):
         await super().save(loop)
 
-    async def save(self, loop):
+    async def save(self, loop, static_fields=None, pk=None, id_auto_increment=False):
         await self._save_players(loop)
         await self._save_paticipation(loop)
 
@@ -162,7 +166,7 @@ class Match(DBModel):
         self.event_groups = [EventGroup(f, self.id) for f in root.find('data_panel').find('filters')]
 
     def __repr__(self):
-        return f'{self.summary}'
+        return f'{self.summary} (id: {self.id})'
 
     def find_event_group(self, event_group_name):
         for eg in self.event_groups:
@@ -171,16 +175,27 @@ class Match(DBModel):
         raise EventGroupNameNotFound(f'Event group name {event_group_name} not found. '
                                      f'Valid event group names are: {[eg.name for eg in self.event_groups]}')
 
+    async def exists_in_db(self, loop):
+        pool = await DBConnection.get_pool(loop)
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(f"SELECT COUNT(*) as cnt FROM `{self.__table_name__}` WHERE `id`={self.id}")
+                r, = await cur.fetchone()
+                return r > 0
+
     async def _save_match(self, loop):
         await super().save(loop)
 
-    async def save(self, loop):
-        await self.home_team.save(loop)
-        await self.away_team.save(loop)
-        await self._save_match(loop)
-        [await p.save(loop) for p in self.participants]
-        # all_events = [e for eg in self.event_groups for e in eg]
-        # TODO: insert all_events using insertmany
+    async def save(self, loop, static_fields=None, pk=None, id_auto_increment=False):
+        exists = False  # await self.exists_in_db(loop)
+        if not exists:
+            # await self.home_team.save(loop)
+            # await self.away_team.save(loop)
+            # await self._save_match(loop)
+            # [await p.save(loop) for p in self.participants]
+            [await e.save(loop) for eg in self.event_groups for e in eg]
+        else:
+            logger.info('Match <<< {} >>> already exists in DB.'.format(self))
 
 
 class EventGroup:
@@ -200,7 +215,13 @@ class EventGroup:
         return f'{self.__class__.__name__} ({len(self.events)})'
 
 
-class Event:
+class Event(DBModel):
+    __table_name__ = 'event'
+    __pk__ = ['id']
+    controlled_cols = ['player_id', 'counterparty_id', 'match_id', 'minsec', 'event_type', 'start_0', 'start_1',
+                       'end_0', 'end_1', 'yz_plane_pt_0', 'yz_plane_pt_1', 'a', 'action_type', 'card_type', 'gy',
+                       'gz', 'headed', 'injurytime_play', 'k', 'ot_id', 'ot_outcome', 'throw_ins', 'type', 'uid']
+
     attr_key_type = {'action_type': str, 'headed': bool, 'mins': int, 'minsec': int, 'player_id': int, 'secs': int,
                      'team_id': int, 'type': str, 'injurytime_play': bool, 'uid': str, 'throw_ins': bool, 'team': int,
                      'other_player': int, 'other_team': int, 'shot_player': int, 'shot_team': int, 'ot_id': int,
@@ -235,11 +256,18 @@ class Event:
     def from_element_root(cls, root, tag, match_id):
         return event_class[tag](root, match_id)
 
+    async def save(self, loop, static_fields=None, pk=None, id_auto_increment=False):
+        controlled = [k for k in self.__dict__.keys() if k in self.controlled_cols]
+        coord_fields = flatten([[f'{f}_0', f'{f}_1'] for k in controlled if isinstance(getattr(self, k), Coordinate)])
+        non_coord_fields = [k for k in controlled if not isinstance(getattr(self, k), Coordinate)]
+        static_fields = [f for f in coord_fields + non_coord_fields if getattr(self, f) is not None]
+        await super().save(loop, static_fields=static_fields, id_auto_increment=True)
+
 
 class GoalKeeping(Event):
     def __init__(self, root, match_id):
         super().__init__(root, match_id)
-        self.start = self.end = tuple(float(p) for p in root.text.split(','))
+        self.start = self.end = Coordinate(*(p for p in root.text.split(',')))
 
 
 class GoalAttempt(Event):
@@ -248,14 +276,14 @@ class GoalAttempt(Event):
     def __init__(self, root, match_id):
         super().__init__(root, match_id)
         coordinates = root.find('coordinates')
-        self.start = float(coordinates.attrib['start_x']), float(coordinates.attrib['start_y'])
+        self.start = Coordinate(coordinates.attrib['start_x'], coordinates.attrib['start_y'])
 
         gmouth_y = float(coordinates.attrib['gmouth_y']) if coordinates.attrib['gmouth_y'] != "" else None
         gmouth_z = float(coordinates.attrib['gmouth_z']) if coordinates.attrib['gmouth_z'] != "" else None
-        self.yz_plane_pt = gmouth_y, gmouth_z
+        self.yz_plane_pt = Coordinate(gmouth_y, gmouth_z)
 
         # if end_x and end_y doesn't exist, it means the shot is off-target.
-        self.end = float(coordinates.attrib.get('end_x') or 100.0), float(coordinates.attrib.get('end_y') or gmouth_y)
+        self.end = Coordinate(coordinates.attrib.get('end_x') or 100.0, coordinates.attrib.get('end_y') or gmouth_y)
 
 
 class ActionArea(Event):
@@ -267,7 +295,7 @@ class HeadedDual(Event):
     """Only reflects the headed duals that a player won, failed will only stored to the counterparty, not current one"""
     def __init__(self, root, match_id):
         super().__init__(root, match_id)
-        self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
+        self.start = self.end = Coordinate(*(p for p in root.find('loc').text.split(',')))
         self.counterparty_id = int(root.find('otherplayer').text)
         # self.counterparty = PlayerPool.get(root.find('otherplayer').text)
 
@@ -275,28 +303,28 @@ class HeadedDual(Event):
 class Interception(Event):
     def __init__(self, root, match_id):
         super().__init__(root, match_id)
-        self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
+        self.start = self.end = Coordinate(*(p for p in root.find('loc').text.split(',')))
 
 
 class Clearance(Event):
     """There's a boolean tag 'headed' to identify whether the clearence is done by head."""
     def __init__(self, root, match_id):
         super().__init__(root, match_id)
-        self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
+        self.start = self.end = Coordinate(*(p for p in root.find('loc').text.split(',')))
 
 
 class Pass(Event):
     """There's tagging on each pass event, such as long_ball, assist."""
     def __init__(self, root, match_id):
         super().__init__(root, match_id)
-        self.start = tuple(float(p) for p in root.find('start').text.split(','))
-        self.end = tuple(float(p) for p in root.find('end').text.split(','))
+        self.start = Coordinate(*(p for p in root.find('start').text.split(',')))
+        self.end = Coordinate(*(p for p in root.find('end').text.split(',')))
 
 
 class Tackle(Event):
     def __init__(self, root, match_id):
         super().__init__(root, match_id)
-        self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
+        self.start = self.end = Coordinate(*(p for p in root.find('loc').text.split(',')))
         self.player_id = int(root.find('tackler').text)
         self.counterparty_id = int(root.attrib['player_id'])
         # self.player = PlayerPool.get(root.find('tackler').text)
@@ -306,16 +334,16 @@ class Tackle(Event):
 class Cross(Event):
     def __init__(self, root, match_id):
         super().__init__(root, match_id)
-        self.start = tuple(float(p) for p in root.find('start').text.split(','))
-        self.end = tuple(float(p) for p in root.find('end').text.split(','))
+        self.start = Coordinate(*(p for p in root.find('start').text.split(',')))
+        self.end = Coordinate(*(p for p in root.find('end').text.split(',')))
 
 
 class Corner(Event):
     """swere could be inward / outward, which means the curve direction of a corner"""
     def __init__(self, root, match_id):
         super().__init__(root, match_id)
-        self.start = tuple(float(p) for p in root.find('start').text.split(','))
-        self.end = tuple(float(p) for p in root.find('end').text.split(','))
+        self.start = Coordinate(*(p for p in root.find('start').text.split(',')))
+        self.end = Coordinate(*(p for p in root.find('end').text.split(',')))
 
 
 class Offside(Event):
@@ -340,13 +368,13 @@ class TakeOn(Event):
     """TakeOn means one player takes the ball to pass the defence of another player."""
     def __init__(self, root, match_id):
         super().__init__(root, match_id)
-        self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
+        self.start = self.end = Coordinate(*(p for p in root.find('loc').text.split(',')))
 
 
 class Foul(Event):
     def __init__(self, root, match_id):
         super().__init__(root, match_id)
-        self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
+        self.start = self.end = Coordinate(*(p for p in root.find('loc').text.split(',')))
         self.counterparty_id = int(root.find('otherplayer').text)
         # self.counterparty = PlayerPool.get(root.find('otherplayer').text)
 
@@ -354,7 +382,7 @@ class Foul(Event):
 class Card(Event):
     def __init__(self, root, match_id):
         super().__init__(root, match_id)
-        self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
+        self.start = self.end = Coordinate(*(p for p in root.find('loc').text.split(',')))
         self.card_type = root.find('card').text
 
 
@@ -362,23 +390,23 @@ class Block(Event):
     def __init__(self, root, match_id):
         super().__init__(root, match_id)
         if root.find('loc'):
-            self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
+            self.start = self.end = Coordinate(*(p for p in root.find('loc').text.split(',')))
         elif root.find('start') and root.find('end'):
-            self.start = self.end = tuple(float(p) for p in root.find('end').text.split(','))
+            self.start = self.end = Coordinate(*(p for p in root.find('end').text.split(',')))
 
 
 class ExtraHeatMap(Event):
     def __init__(self, root, match_id):
         super().__init__(root, match_id)
-        self.start = self.end = tuple(float(p) for p in root.find('loc').text.split(','))
+        self.start = self.end = Coordinate(*(p for p in root.find('loc').text.split(',')))
 
 
 class BallOut(Event):
     """Ball-Out means a player caused the ball going out of the boundary."""
     def __init__(self, root, match_id):
         super().__init__(root, match_id)
-        self.start = tuple(float(p) for p in root.find('start').text.split(','))
-        self.end = tuple(float(p) for p in root.find('end').text.split(','))
+        self.start = Coordinate(*(p for p in root.find('start').text.split(',')))
+        self.end = Coordinate(*(p for p in root.find('end').text.split(',')))
 
 
 event_class = {
