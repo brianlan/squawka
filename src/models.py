@@ -1,4 +1,5 @@
 import re
+import asyncio
 import datetime
 
 import aiomysql
@@ -9,22 +10,22 @@ from .utils import flatten
 
 
 class DBConnection:
-    pool = None
+    _pool = None
 
     @classmethod
     async def get_pool(cls, event_loop):
-        if cls.pool is None:
-            cls.pool = await aiomysql.create_pool(host=CONFIG['data_db']['host'], port=CONFIG['data_db']['port'],
-                                                  user=CONFIG['data_db']['username'],
-                                                  password=CONFIG['data_db']['password'],
-                                                  db='squawka', loop=event_loop)
-        return cls.pool
+        if cls._pool is None:
+            cls._pool = await aiomysql.create_pool(host=CONFIG['data_db']['host'], port=CONFIG['data_db']['port'],
+                                                   user=CONFIG['data_db']['username'],
+                                                   password=CONFIG['data_db']['password'],
+                                                   db='squawka', maxsize=50, loop=event_loop)
+        return cls._pool
 
     @classmethod
     async def close(cls):
-        if cls.pool is not None:
-            cls.pool.close()
-            await cls.pool.wait_closed()
+        if cls._pool is not None:
+            cls._pool.close()
+            await cls._pool.wait_closed()
 
 
 class DBModel:
@@ -63,6 +64,7 @@ class DBModel:
         static_fields = static_fields or self.__static_fields__
         pk = pk or self.__pk__
         pool = await DBConnection.get_pool(loop)
+        logger.debug(f'id(pool)={id(pool)}, pool.size={pool.size}, pool.freesize={pool.freesize}')
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
                 pairs = self._get_field_name_value_pairs(static_fields, pk, id_auto_increment)
@@ -187,13 +189,12 @@ class Match(DBModel):
         await super().save(loop)
 
     async def save(self, loop, static_fields=None, pk=None, id_auto_increment=False):
-        exists = False  # await self.exists_in_db(loop)
+        exists = await self.exists_in_db(loop)
         if not exists:
-            # await self.home_team.save(loop)
-            # await self.away_team.save(loop)
-            # await self._save_match(loop)
-            # [await p.save(loop) for p in self.participants]
-            [await e.save(loop) for eg in self.event_groups for e in eg]
+            tasks = [self.home_team.save(loop), self.away_team.save(loop), self._save_match(loop)] \
+                    + [p.save(loop) for p in self.participants] \
+                    + [e.save(loop) for eg in self.event_groups for e in eg]
+            await asyncio.wait(tasks)
         else:
             logger.info('Match <<< {} >>> already exists in DB.'.format(self))
 
@@ -218,9 +219,6 @@ class EventGroup:
 class Event(DBModel):
     __table_name__ = 'event'
     __pk__ = ['id']
-    controlled_cols = ['player_id', 'counterparty_id', 'match_id', 'minsec', 'event_type', 'start_0', 'start_1',
-                       'end_0', 'end_1', 'yz_plane_pt_0', 'yz_plane_pt_1', 'a', 'action_type', 'card_type', 'gy',
-                       'gz', 'headed', 'injurytime_play', 'k', 'ot_id', 'ot_outcome', 'throw_ins', 'type', 'uid']
 
     attr_key_type = {'action_type': str, 'headed': bool, 'mins': int, 'minsec': int, 'player_id': int, 'secs': int,
                      'team_id': int, 'type': str, 'injurytime_play': bool, 'uid': str, 'throw_ins': bool, 'team': int,
@@ -257,7 +255,7 @@ class Event(DBModel):
         return event_class[tag](root, match_id)
 
     async def save(self, loop, static_fields=None, pk=None, id_auto_increment=False):
-        controlled = [k for k in self.__dict__.keys() if k in self.controlled_cols]
+        controlled = [k for k in self.__dict__.keys() if k in controlled_event_cols]
         coord_fields = flatten([[f'{f}_0', f'{f}_1'] for k in controlled if isinstance(getattr(self, k), Coordinate)])
         non_coord_fields = [k for k in controlled if not isinstance(getattr(self, k), Coordinate)]
         static_fields = [f for f in coord_fields + non_coord_fields if getattr(self, f) is not None]
@@ -431,3 +429,7 @@ event_class = {
     'extra_heat_maps': ExtraHeatMap,
     'balls_out': BallOut
 }
+
+controlled_event_cols = ['player_id', 'counterparty_id', 'match_id', 'minsec', 'event_type', 'start_0', 'start_1',
+                         'end_0', 'end_1', 'yz_plane_pt_0', 'yz_plane_pt_1', 'a', 'action_type', 'card_type', 'gy',
+                         'gz', 'headed', 'injurytime_play', 'k', 'ot_id', 'ot_outcome', 'throw_ins', 'type', 'uid']
