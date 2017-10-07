@@ -256,8 +256,8 @@ class Event(DBModel):
 
     async def save(self, loop, static_fields=None, pk=None, id_auto_increment=False):
         controlled = [k for k in self.__dict__.keys() if k in controlled_event_cols]
-        coord_fields = flatten([[f'{f}_0', f'{f}_1'] for k in controlled if isinstance(getattr(self, k), Coordinate)])
-        non_coord_fields = [k for k in controlled if not isinstance(getattr(self, k), Coordinate)]
+        coord_fields = flatten([[f'{f}_0', f'{f}_1'] for f in controlled if isinstance(getattr(self, f), Coordinate)])
+        non_coord_fields = [f for f in controlled if not isinstance(getattr(self, f), Coordinate)]
         static_fields = [f for f in coord_fields + non_coord_fields if getattr(self, f) is not None]
         await super().save(loop, static_fields=static_fields, id_auto_increment=True)
 
@@ -278,7 +278,7 @@ class GoalAttempt(Event):
 
         gmouth_y = float(coordinates.attrib['gmouth_y']) if coordinates.attrib['gmouth_y'] != "" else None
         gmouth_z = float(coordinates.attrib['gmouth_z']) if coordinates.attrib['gmouth_z'] != "" else None
-        self.yz_plane_pt = Coordinate(gmouth_y, gmouth_z)
+        self.yz_plane_coord = Coordinate(gmouth_y, gmouth_z)
 
         # if end_x and end_y doesn't exist, it means the shot is off-target.
         self.end = Coordinate(coordinates.attrib.get('end_x') or 100.0, coordinates.attrib.get('end_y') or gmouth_y)
@@ -430,6 +430,6 @@ event_class = {
     'balls_out': BallOut
 }
 
-controlled_event_cols = ['player_id', 'counterparty_id', 'match_id', 'minsec', 'event_type', 'start_0', 'start_1',
-                         'end_0', 'end_1', 'yz_plane_pt_0', 'yz_plane_pt_1', 'a', 'action_type', 'card_type', 'gy',
-                         'gz', 'headed', 'injurytime_play', 'k', 'ot_id', 'ot_outcome', 'throw_ins', 'type', 'uid']
+controlled_event_cols = ['player_id', 'counterparty_id', 'match_id', 'minsec', 'event_type', 'start', 'end',
+                         'yz_plane_coord', 'a', 'action_type', 'card_type', 'gy', 'gz', 'headed', 'injurytime_play', 'k',
+                         'ot_id', 'ot_outcome', 'throw_ins', 'type', 'uid']

@@ -57,8 +57,8 @@ create table `event` (
     `end_0` float,
     `end_1` float,
 
-    `yz_plane_pt_0` float,
-    `yz_plane_pt_1` float,
+    `yz_plane_coord_0` float,
+    `yz_plane_coord_1` float,
 
     `a` tinyint(1),
     `action_type` varchar(32),
