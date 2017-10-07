@@ -22,14 +22,13 @@ create table `player` (
 );
 
 create table `participation` (
-    `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
     `player_id` int(11),
     `match_id` int(11),
     `team_id` int(11),
     `init_loc_0` float(11),
     `init_loc_1` float(11),
     `position` varchar(32),
-    PRIMARY KEY (`id`)
+    PRIMARY KEY (`player_id`, `match_id`, `team_id`)
 );
 
 create table `match` (

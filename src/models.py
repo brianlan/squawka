@@ -30,12 +30,19 @@ class DBModel:
     __table_name__ = ''
     __pk__ = []
     __static_fields__ = []
-    __references__ = []
 
     def __getattr__(self, name):
-        if hasattr(self, name[:-2]) and isinstance(getattr(self, name[:-2]), Coordinate) and name[-2:] in ['_0', '_1']:
-            return getattr(self, name[:-2]).x[int(name[-1:])]
-        return super().__getattr__(name)
+        # Deal with field of type Coordinate
+        if name[-2:] in ['_0', '_1']:
+            if hasattr(self, name[:-2]):
+                if isinstance(getattr(self, name[:-2]), Coordinate):
+                    return getattr(self, name[:-2]).x[int(name[-1:])]
+
+        # Deal with field which is actually a reference to another DBModel object
+        if name[-3:] == '_id':
+            if hasattr(self, name[:-3]):
+                if isinstance(getattr(self, name[:-3]), DBModel):
+                    return getattr(self, name[:-3]).id
 
     @staticmethod
     def _properize(val):
@@ -46,33 +53,21 @@ class DBModel:
         else:
             return f"'{val}'"
 
-    def _generate_db_field_names(self, include_pk=True):
-        all_field_names = [f'{r}_id' for r in self.__references__] \
-                          + self.__static_fields__ \
-                          + (self.__pk__ if include_pk else [])
-        return ','.join([f'`{f}`' for f in all_field_names])
+    def _get_field_name_value_pairs(self):
+        return {f: self._properize(getattr(self, f)) for f in self.__static_fields__ + self.__pk__}
 
-    def _generate_db_field_values(self, include_pk=True):
-        all_field_names = [f'{r}.id' for r in self.__references__] \
-                          + self.__static_fields__ \
-                          + (self.__pk__ if include_pk else [])
-        all_field_values = [self._properize(eval(f'self.{f}')) for f in all_field_names]
-        return ','.join(all_field_values)
-
-    def _generate_db_field_name_value_pairs(self, include_pk=True):
-        static_field_names = self.__static_fields__ + (self.__pk__ if include_pk else [])
-        proper_ref_kv = {f'{f}_id': self._properize(eval(f'self.{f}.id')) for f in self.__references__}
-        all_field_kv = {**proper_ref_kv, **{f: self._properize(eval(f'self.{f}')) for f in static_field_names}}
-        return ','.join([f"`{k}`={v}" for k, v in all_field_kv.items()])
-
-    async def save(self, loop, include_pk=True):
+    async def save(self, loop):
         """It saves the object into DB by performing an upsert operation."""
         pool = await DBConnection.get_pool(loop)
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
-                sql = f"INSERT INTO `{self.__table_name__}` ({self._generate_db_field_names(include_pk=include_pk)}) " \
-                      f"values ({self._generate_db_field_values(include_pk=include_pk)}) " \
-                      f"on duplicate key update {self._generate_db_field_name_value_pairs(False)}"
+                pairs = self._get_field_name_value_pairs()
+                col_names = ','.join([f'`{k}`' for k, v in pairs.items()])
+                col_values = ','.join([v for k, v in pairs.items()])
+                col_name_values = ','.join([f'`{k}`={v}' for k, v in pairs.items() if k not in self.__pk__])
+                sql = f"INSERT INTO `{self.__table_name__}` ({col_names}) " \
+                      f"values ({col_values}) " \
+                      f"on duplicate key update {col_name_values}"
                 logger.debug(sql)
                 await cur.execute(sql)
                 await conn.commit()
@@ -90,7 +85,6 @@ class Player(DBModel):
     __table_name__ = 'player'
     __pk__ = ['id']
     __static_fields__ = ['name', 'date_of_birth', 'weight', 'height', 'country']
-    __references__ = []
 
     def __init__(self, root):
         self.id = int(root.attrib.get('id'))
@@ -106,9 +100,8 @@ class Player(DBModel):
 
 class Participant(DBModel):
     __table_name__ = 'participation'
-    __pk__ = ['']
-    __static_fields__ = ['init_loc_0', 'init_loc_1', 'position', 'team_id']
-    __references__ = ['match', 'player']
+    __pk__ = ['player_id', 'match_id', 'team_id']
+    __static_fields__ = ['init_loc_0', 'init_loc_1', 'position']
 
     """It's different from Player. It stores player info related only to this match, while Player is static."""
     def __init__(self, root, match):
@@ -123,38 +116,11 @@ class Participant(DBModel):
         await self.player.save(loop)
 
     async def _save_paticipation(self, loop):
-        await super().save(loop, include_pk=False)
+        await super().save(loop)
 
     async def save(self, loop):
         await self._save_players(loop)
         await self._save_paticipation(loop)
-
-
-# class PlayerPool:
-#     pool = {}
-#
-#     def __init__(self):
-#         pass
-#
-#     def __len__(self):
-#         return len(self.pool)
-#
-#     @classmethod
-#     def update(cls, root):
-#         [cls.push(p) for p in root]
-#
-#     @classmethod
-#     def get(cls, player_id):
-#         return cls.pool.get(str(player_id))
-#
-#     @classmethod
-#     def push(cls, root):
-#         player = Player(root)
-#         cls.pool.update({str(player.id): player})
-#
-#     @classmethod
-#     def clear(cls):
-#         cls.pool = {}
 
 
 class Team(DBModel):
@@ -174,8 +140,8 @@ class Team(DBModel):
 class Match(DBModel):
     __table_name__ = 'match'
     __pk__ = ['id']
-    __static_fields__ = ['league_id', 'kickoff_time', 'stadium', 'summary', 'home_score', 'away_score']
-    __references__ = ['home_team', 'away_team']
+    __static_fields__ = ['league_id', 'kickoff_time', 'stadium', 'summary', 'home_score', 'away_score', 'home_team_id',
+                         'away_team_id']
 
     def __init__(self, root, league_id, match_id):
         game = root.find('data_panel').find('game')
