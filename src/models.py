@@ -33,15 +33,8 @@ class DBModel:
     __references__ = []
 
     def __getattr__(self, name):
-        try:
-            obj = eval(f'self.{name[:-2]}')
-        except NameError as e:
-            raise AttributeError(e)
-
-        if isinstance(obj, Coordinate):
-            if name[-2:] in ['_0', '_1']:
-                return eval(f'self.{name[:-2]}.x{name[-1:]}')
-
+        if hasattr(self, name[:-2]) and isinstance(getattr(self, name[:-2]), Coordinate) and name[-2:] in ['_0', '_1']:
+            return getattr(self, name[:-2]).x[int(name[-1:])]
         return super().__getattr__(name)
 
     @staticmethod
@@ -87,11 +80,10 @@ class DBModel:
 
 class Coordinate:
     def __init__(self, x0, x1):
-        self.x0 = float(x0)
-        self.x1 = float(x1)
+        self.x = float(x0), float(x1)
 
     def __repr__(self):
-        return f'({self.x0}, {self.x1})'
+        return f'({self.x[0]}, {self.x[1]})'
 
 
 class Player(DBModel):

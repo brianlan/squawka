@@ -60,7 +60,10 @@ FULL_CONFIG = {
     }
 }
 
-CONFIG = FULL_CONFIG[os.environ['SQUAWKA_RUNTIME_STAGE']][os.environ['SQUAWKA_RUNTIME_MODE']]
+RUNTIME_STAGE = os.environ.get('SQUAWKA_RUNTIME_STAGE') or 'local'
+RUNTIME_MODE = os.environ.get('SQUAWKA_RUNTIME_MODE') or 'deploy'
+LOG_LEVEL = logging.getLevelName(os.environ.get('SQUAWKA_LOG_LEVEL') or 'WARN')
+CONFIG = FULL_CONFIG[RUNTIME_STAGE][RUNTIME_MODE]
 
 
 def get_config(stage, mode):
@@ -72,16 +75,16 @@ def get_config(stage, mode):
 #####################
 LOG_DIR = 'log'
 
-logger = logging.getLogger('skynet-portal')
-logger.setLevel(logging.DEBUG)
+logger = logging.getLogger('squawka')
+logger.setLevel(LOG_LEVEL)
 fh = logging.FileHandler(os.path.sep.join([
     LOG_DIR if os.path.isdir(LOG_DIR) and os.access(LOG_DIR, os.W_OK) else '/tmp',
     datetime.datetime.strftime(datetime.datetime.now(), '%Y%m%d')
 ]))
-fh.setLevel(logging.DEBUG)
+fh.setLevel(LOG_LEVEL)
 
 ch = logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
+ch.setLevel(LOG_LEVEL)
 formatter = logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
