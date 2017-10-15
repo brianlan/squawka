@@ -7,6 +7,9 @@ from .error import UnrecognizedURLFormat
 from .settings import RESULT_URL_BASE, DEFAULT_LEAGUE, DEFAULT_SEASON
 
 
+queue = asyncio.Queue()
+
+
 class ResultPage:
     def __init__(self, html: str=None, soup: BeautifulSoup=None):
         if html is None and soup is None:

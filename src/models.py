@@ -168,6 +168,13 @@ class Match(DBModel):
         self.participants = [Participant(p, self) for p in root.find('data_panel').find('players')]
         self.event_groups = [EventGroup(f, self.id) for f in root.find('data_panel').find('filters')]
 
+    @classmethod
+    async def find_one(cls, loop, condition):
+        pool = await DBConnection.get_pool(loop)
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("")
+
     def __repr__(self):
         return f'{self.summary} (id: {self.id})'
 
