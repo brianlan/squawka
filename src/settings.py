@@ -14,7 +14,7 @@ RESULT_URL_BASE = 'http://www.squawka.com/match-results'
 #####################
 #  Load Auth file   #
 #####################
-with open('../../auth.yml', 'r') as f:
+with open('auth.yml', 'r') as f:
     AUTH = yaml.load(f)
 
 #####################################

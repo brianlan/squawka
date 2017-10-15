@@ -12,7 +12,7 @@ from ..models import Match
 def test_parse_match():
     tree = ET.parse('squawka.xml')
     root = tree.getroot()
-    match = Match(root, 23, 34267)
+    match = Match('dummy_url', root, 34267)
 
     assert match.summary == 'Barcelona 3 - 0 Las Palmas'
     assert f'{match.kickoff_time.year}-{match.kickoff_time.month}-{match.kickoff_time.day}' == '2017-10-1'
@@ -54,7 +54,7 @@ def test_parse_match():
 def test_parse_match2():
     tree = ET.parse('squawka2.xml')
     root = tree.getroot()
-    match = Match(root, 23, 34253)
+    match = Match('dummy_url', root, 34253)
     assert len(match.event_groups) == 20
 
     assert match.summary == 'R Madrid 0 - 1 Betis'
@@ -89,7 +89,7 @@ def test_parse_match2():
 def test_parse_player_info():
     tree = ET.parse('squawka.xml')
     root = tree.getroot()
-    match = Match(root, 23, 34267)
+    match = Match('dummy_url', root, 34267)
     assert len(match.participants) == 36
     assert match.participants[0].player.name == 'Marc-André ter Stegen'
     assert match.participants[0].player.country == 'Germany'
@@ -103,6 +103,6 @@ def test_parse_player_info():
 def test_get_unique_event_attr():
     tree = ET.parse('squawka.xml')
     root = tree.getroot()
-    match = Match(root, 23, 34267)
+    match = Match('dummy_url', root, 34267)
     attr_cnt = defaultdict(int)
     [attr_cnt.update({a: attr_cnt[a]+1}) for eg in match.event_groups for e in eg for a in e.__dict__.keys()]

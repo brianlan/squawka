@@ -19,7 +19,7 @@ from ..models import Match, DBConnection
 
 @pytest.mark.asyncio
 async def test_save_match(event_loop):
-    match = Match(ET.parse('squawka.xml').getroot(), 23, 34267)
-    match2 = Match(ET.parse('squawka2.xml').getroot(), 23, 34253)
+    match = Match('dummy_url', ET.parse('squawka.xml').getroot(), 34267)
+    match2 = Match('dummy_url', ET.parse('squawka2.xml').getroot(), 34253)
     await match.save(event_loop)
     await match2.save(event_loop)

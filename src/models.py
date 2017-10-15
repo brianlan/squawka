@@ -50,7 +50,9 @@ class DBModel:
 
     @staticmethod
     def _properize(val):
-        if isinstance(val, int) or isinstance(val, float):
+        if val is None:
+            return "NULL"
+        elif isinstance(val, int) or isinstance(val, float):
             return f"{val}"
         elif isinstance(val, datetime.datetime):
             return f"'{datetime.datetime.strftime(val, '%Y-%m-%d %H:%M:%S')}'"
@@ -79,6 +81,17 @@ class DBModel:
                 logger.debug(sql)
                 await cur.execute(sql)
                 await conn.commit()
+
+    @classmethod
+    async def exists_in_db(cls, loop, cond):
+        pool = await DBConnection.get_pool(loop)
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                sql = f"SELECT COUNT(*) as cnt FROM `{cls.__table_name__}` WHERE "\
+                      + ' AND '.join([f'`{k}` = {cls._properize(v)}' for k, v in cond.items()])
+                await cur.execute(sql)
+                r, = await cur.fetchone()
+                return r > 0
 
 
 class Coordinate:
@@ -148,34 +161,37 @@ class Team(DBModel):
 class Match(DBModel):
     __table_name__ = 'match'
     __pk__ = ['id']
-    __static_fields__ = ['url', 'league_id', 'kickoff_time', 'stadium', 'summary', 'home_score', 'away_score',
+    __static_fields__ = ['url', 'league_name', 'kickoff_time', 'stadium', 'summary', 'home_score', 'away_score',
                          'home_team_id', 'away_team_id']
 
-    def __init__(self, url, root, league_id, match_id):
+    def __init__(self, url, root, match_id):
         self.url = url
         game = root.find('data_panel').find('game')
         teams = list(game.findall('team'))
         self.id = match_id
-        self.league_id = league_id
         self.summary = root.find('data_panel').find('system').find('headline').text.strip()
         self.kickoff_time = datetime.datetime.strptime(game.find('kickoff').text, '%a, %d %b %Y %H:%M:%S %z')
         self.stadium = game.find('venue').text.strip()
         self.home_team = Team(teams[0])
         self.away_team = Team(teams[1])
 
+        m = re.search(r'^http.+//.+.squawka\.com/([a-zA-Z_-]+)/', url)
+        try:
+            self.league_name = m.group(1)
+        except AttributeError as e:
+            logger.warn(f'Cannot extract league name out of url: {url}. err_msg: {e}')
+            self.league_name = 'unknown'
+
         m = re.search(r'(\d+) - (\d+)', self.summary)
-        self.home_score, self.away_score = int(m.group(1)), int(m.group(2))
+        try:
+            self.home_score, self.away_score = int(m.group(1)), int(m.group(2))
+        except AttributeError as e:
+            logger.error(f'Cannot extract scores out of summary: {self.summary}. err_msg: {e}')
+            self.home_score, self.away_score = -1, -1
 
         # PlayerPool.update(root.find('data_panel').find('players'))
         self.participants = [Participant(p, self) for p in root.find('data_panel').find('players')]
         self.event_groups = [EventGroup(f, self.id) for f in root.find('data_panel').find('filters')]
-
-    @classmethod
-    async def find_one(cls, loop, condition):
-        pool = await DBConnection.get_pool(loop)
-        async with pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute("")
 
     def __repr__(self):
         return f'{self.summary} (id: {self.id})'
@@ -187,19 +203,11 @@ class Match(DBModel):
         raise EventGroupNameNotFound(f'Event group name {event_group_name} not found. '
                                      f'Valid event group names are: {[eg.name for eg in self.event_groups]}')
 
-    async def exists_in_db(self, loop):
-        pool = await DBConnection.get_pool(loop)
-        async with pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(f"SELECT COUNT(*) as cnt FROM `{self.__table_name__}` WHERE `id`={self.id}")
-                r, = await cur.fetchone()
-                return r > 0
-
     async def _save_match(self, loop):
         await super().save(loop)
 
     async def save(self, loop, static_fields=None, pk=None, id_auto_increment=False):
-        exists = await self.exists_in_db(loop)
+        exists = await self.exists_in_db(loop, {'id': self.id})
         if not exists:
             tasks = [self.home_team.save(loop), self.away_team.save(loop), self._save_match(loop)] \
                     + [p.save(loop) for p in self.participants] \

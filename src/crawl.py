@@ -1,9 +1,12 @@
+import re
 import asyncio
 
 from aiohttp import ClientSession
 from bs4 import BeautifulSoup
+import xml.etree.ElementTree as ET
 
 from .error import UnrecognizedURLFormat
+from .models import Match
 from .settings import RESULT_URL_BASE, DEFAULT_LEAGUE, DEFAULT_SEASON
 
 
@@ -40,10 +43,9 @@ class ResultPage:
         return [td.a['href'] for td in self.soup.find_all('td', attrs={'class': 'match-centre'})]
 
 
-async def enqueue_if_not_exist(match_url):
-    # TODO: check if match_url exists in DB
-    # TODO: if not exist, push the match_url to queue
-    pass
+async def enqueue_if_not_exist(match_url, loop):
+    if not Match.exists_in_db(loop, {'url': match_url}):
+        queue.put(match_url)
 
 
 async def process_entry_page(url, loop, latest=None):
@@ -65,5 +67,29 @@ async def process_entry_page(url, loop, latest=None):
             async with sess.get(pg_url) as resp:
                 result_pages.append(ResultPage(await resp.text()))
 
-        tasks = [enqueue_if_not_exist(m) for p in result_pages for m in p.get_match_urls()]
+        tasks = [enqueue_if_not_exist(m, loop) for p in result_pages for m in p.get_match_urls()]
         asyncio.wait(tasks)
+
+
+async def get_data_xml(match_url, loop):
+    async with ClientSession(loop=loop) as sess:
+        async with sess.get(match_url) as resp:
+            text = await resp.text()
+
+        m = re.search("chatClient\.roomID\s*=\s*parseInt\(\\'(\d+)\\'\)", text)
+        match_id = m.group(1)
+
+        # chat_data_url = f'http://s3-irl-laliga.squawka.com/chat/{match_id}'
+        ingame_data_url3 = f'http://s3-irl-laliga.squawka.com/dp/ingame/{match_id}'
+        # ingame_rdp_data_url2 = f'http://s3-irl-laliga.squawka.com/dp/ingame_rdp/{match_id}'
+
+        async with sess.get(ingame_data_url3) as resp:
+            data = await resp.text()
+
+        return int(match_id), ET.fromstring(data)
+
+
+async def process_match(url, loop):
+    match_id, root = await get_data_xml(url, loop)
+    match = Match(url, root, match_id)
+    await match.save(loop)

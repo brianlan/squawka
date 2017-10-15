@@ -33,7 +33,8 @@ create table `participation` (
 
 create table `match` (
     `id` int(11) NOT NULL,
-    `league_id` int(11),
+    `url` varchar(1024),
+    `league_name` varchar(64),
     `kickoff_time` datetime,
     `stadium` varchar(128),
     `summary` varchar(256),
