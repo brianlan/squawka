@@ -148,10 +148,11 @@ class Team(DBModel):
 class Match(DBModel):
     __table_name__ = 'match'
     __pk__ = ['id']
-    __static_fields__ = ['league_id', 'kickoff_time', 'stadium', 'summary', 'home_score', 'away_score', 'home_team_id',
-                         'away_team_id']
+    __static_fields__ = ['url', 'league_id', 'kickoff_time', 'stadium', 'summary', 'home_score', 'away_score',
+                         'home_team_id', 'away_team_id']
 
-    def __init__(self, root, league_id, match_id):
+    def __init__(self, url, root, league_id, match_id):
+        self.url = url
         game = root.find('data_panel').find('game')
         teams = list(game.findall('team'))
         self.id = match_id
@@ -168,6 +169,13 @@ class Match(DBModel):
         # PlayerPool.update(root.find('data_panel').find('players'))
         self.participants = [Participant(p, self) for p in root.find('data_panel').find('players')]
         self.event_groups = [EventGroup(f, self.id) for f in root.find('data_panel').find('filters')]
+
+    @classmethod
+    async def find_one(cls, loop, condition):
+        pool = await DBConnection.get_pool(loop)
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("")
 
     def __repr__(self):
         return f'{self.summary} (id: {self.id})'

@@ -4,6 +4,13 @@ import os
 import yaml
 
 
+###############################
+#  Definition for Constants   #
+###############################
+DEFAULT_SEASON = '2017'
+DEFAULT_LEAGUE = '-1'
+RESULT_URL_BASE = 'http://www.squawka.com/match-results'
+
 #####################
 #  Load Auth file   #
 #####################
