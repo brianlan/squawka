@@ -4,3 +4,7 @@ class Error(Exception):
 
 class EventGroupNameNotFound(Error):
     pass
+
+
+class UnrecognizedURLFormat(Error):
+    pass

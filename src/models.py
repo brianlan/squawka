@@ -146,10 +146,11 @@ class Team(DBModel):
 class Match(DBModel):
     __table_name__ = 'match'
     __pk__ = ['id']
-    __static_fields__ = ['league_id', 'kickoff_time', 'stadium', 'summary', 'home_score', 'away_score', 'home_team_id',
-                         'away_team_id']
+    __static_fields__ = ['url', 'league_id', 'kickoff_time', 'stadium', 'summary', 'home_score', 'away_score',
+                         'home_team_id', 'away_team_id']
 
-    def __init__(self, root, league_id, match_id):
+    def __init__(self, url, root, league_id, match_id):
+        self.url = url
         game = root.find('data_panel').find('game')
         teams = list(game.findall('team'))
         self.id = match_id

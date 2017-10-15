@@ -98,3 +98,4 @@ ENV/
 .idea*
 auth.yml
 *log/
+.vscode*
