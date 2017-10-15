@@ -14,6 +14,8 @@ class DBConnection:
 
     @classmethod
     async def get_pool(cls, event_loop):
+        """Notes: it's critical to make sure the 1st time this method get called is not something like
+        asyncio.gather or asyncio.wait, otherwise single pool assumption here will be break."""
         if cls._pool is None:
             cls._pool = await aiomysql.create_pool(host=CONFIG['data_db']['host'], port=CONFIG['data_db']['port'],
                                                    user=CONFIG['data_db']['username'],
@@ -451,5 +453,5 @@ event_class = {
 }
 
 controlled_event_cols = ['player_id', 'counterparty_id', 'match_id', 'minsec', 'event_type', 'start', 'end',
-                         'yz_plane_coord', 'a', 'action_type', 'card_type', 'gy', 'gz', 'headed', 'injurytime_play', 'k',
-                         'ot_id', 'ot_outcome', 'throw_ins', 'type', 'uid']
+                         'yz_plane_coord', 'a', 'action_type', 'card_type', 'gy', 'gz', 'headed', 'injurytime_play',
+                         'k', 'ot_id', 'ot_outcome', 'throw_ins', 'type', 'uid']
