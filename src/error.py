@@ -8,3 +8,7 @@ class EventGroupNameNotFound(Error):
 
 class UnrecognizedURLFormat(Error):
     pass
+
+
+class PageNumNotPresentInURL(Error):
+    pass
