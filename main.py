@@ -5,7 +5,6 @@ from src.settings import RESULT_URL_BASE, DEFAULT_LEAGUE, DEFAULT_SEASON
 
 
 if __name__ == '__main__':
-    # TODO: add row_cre_ts for each table
     # TODO: write scheduler myself
     # TODO: make the absolute interval random to prevent regular accessing pattern been discovered by squawka
     # TODO: use argparse to specify detailed behavior of this crawler

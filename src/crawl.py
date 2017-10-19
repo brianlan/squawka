@@ -7,7 +7,8 @@ import xml.etree.ElementTree as ET
 
 from .error import UnrecognizedURLFormat, PageNumNotPresentInURL
 from .models import Match
-from .settings import RESULT_URL_BASE, RESULT_PAGE_VISIT_INTERVAL, MATCH_CONSUME_INTERVAL, logger
+from .utils import jitter
+from .settings import RESULT_URL_BASE, MATCH_CONSUME_INTERVAL, logger
 
 
 queue = asyncio.Queue()
@@ -108,7 +109,7 @@ async def process_entry_page(url, loop, latest=None):
         for pg_url in pg_urls:
             async with sess.get(pg_url) as resp:
                 result_pages.append(ResultPage(pg_url, await resp.text()))
-                await asyncio.sleep(RESULT_PAGE_VISIT_INTERVAL)
+                await asyncio.sleep(jitter(15))
 
         [await enqueue_if_not_exist(m, loop) for p in result_pages for m in p.get_match_urls()]
 
@@ -142,5 +143,5 @@ async def process_match(loop):
         logger.info('Match {} is done.'.format(url))
         queue.task_done()
         logger.info('Sleep for a while...')
-        await asyncio.sleep(MATCH_CONSUME_INTERVAL)
+        await asyncio.sleep(jitter(MATCH_CONSUME_INTERVAL))
         logger.info("Wake up from sleep. I'm going to work now.")
