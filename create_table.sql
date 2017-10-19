@@ -1,6 +1,7 @@
 create table `league` (
     `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
     `name` varchar(128),
+    `row_cre_ts` datetime DEFAULT current_timestamp(),
     PRIMARY KEY (`id`)
 );
 
@@ -8,6 +9,7 @@ create table `team` (
     `id` int(11) NOT NULL,
     `name` varchar(128),
     `short_name` varchar(64),
+    `row_cre_ts` datetime DEFAULT current_timestamp(),
     PRIMARY KEY (`id`)
 );
 
@@ -18,6 +20,7 @@ create table `player` (
     `weight` float,
     `height` float,
     `country` varchar(128),
+    `row_cre_ts` datetime DEFAULT current_timestamp(),
     PRIMARY KEY (`id`)
 );
 
@@ -28,6 +31,7 @@ create table `participation` (
     `init_loc_0` float(11),
     `init_loc_1` float(11),
     `position` varchar(32),
+    `row_cre_ts` datetime DEFAULT current_timestamp(),
     PRIMARY KEY (`player_id`, `match_id`, `team_id`)
 );
 
@@ -42,6 +46,7 @@ create table `match` (
     `away_team_id` int(11),
     `home_score` int(11) DEFAULT 0,
     `away_score` int(11) DEFAULT 0,
+    `row_cre_ts` datetime DEFAULT current_timestamp(),
     PRIMARY KEY (`id`)
 );
 
@@ -74,5 +79,6 @@ create table `event` (
     `throw_ins` tinyint(1),
     `type` varchar(32),
     `uid` varchar(16),
+    `row_cre_ts` datetime DEFAULT current_timestamp(),
     PRIMARY KEY (`id`)
 );
