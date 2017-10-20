@@ -1,3 +1,4 @@
+import re
 import random
 
 
@@ -8,3 +9,13 @@ def flatten(x):
 
 def jitter(mu, sigma=4):
     return int(random.normalvariate(mu, sigma))
+
+
+def get_league_name(match_url, short=True):
+    pat = r'^http.+//(.+).squawka\.com/.*' if short else r'^http.+//.+.squawka\.com/([a-zA-Z_-]+)/'
+    m = re.search(pat, match_url)
+    try:
+        league_name = m.group(1)
+    except AttributeError:
+        league_name = 'unknown'
+    return league_name

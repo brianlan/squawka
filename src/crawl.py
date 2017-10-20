@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 
 from .error import UnrecognizedURLFormat, PageNumNotPresentInURL
 from .models import Match
-from .utils import jitter
+from .utils import jitter, get_league_name
 from .settings import RESULT_URL_BASE, MATCH_CONSUME_INTERVAL, logger
 
 
@@ -123,7 +123,7 @@ async def get_data_xml(match_url, loop):
         match_id = m.group(1)
 
         # chat_data_url = f'http://s3-irl-laliga.squawka.com/chat/{match_id}'
-        ingame_data_url3 = f'http://s3-irl-laliga.squawka.com/dp/ingame/{match_id}'
+        ingame_data_url3 = f'http://s3-irl-{get_league_name(match_url)}.squawka.com/dp/ingame/{match_id}'
         # ingame_rdp_data_url2 = f'http://s3-irl-laliga.squawka.com/dp/ingame_rdp/{match_id}'
 
         async with sess.get(ingame_data_url3) as resp:

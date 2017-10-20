@@ -6,7 +6,7 @@ import aiomysql
 
 from .settings import logger, CONFIG
 from .error import EventGroupNameNotFound
-from .utils import flatten
+from .utils import flatten, get_league_name
 
 
 class DBConnection:
@@ -166,6 +166,7 @@ class Match(DBModel):
 
     def __init__(self, url, root, match_id):
         self.url = url
+        self.league_name = get_league_name(self.url)
         game = root.find('data_panel').find('game')
         teams = list(game.findall('team'))
         self.id = match_id
@@ -174,13 +175,6 @@ class Match(DBModel):
         self.stadium = game.find('venue').text.strip()
         self.home_team = Team(teams[0])
         self.away_team = Team(teams[1])
-
-        m = re.search(r'^http.+//.+.squawka\.com/([a-zA-Z_-]+)/', url)
-        try:
-            self.league_name = m.group(1)
-        except AttributeError as e:
-            logger.warn(f'Cannot extract league name out of url: {url}. err_msg: {e}')
-            self.league_name = 'unknown'
 
         m = re.search(r'(\d+) - (\d+)', self.summary)
         try:
