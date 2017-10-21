@@ -111,10 +111,13 @@ class Player(DBModel):
     def __init__(self, root):
         self.id = int(root.attrib.get('id'))
         self.name = root.find('name').text.strip()
-        self.date_of_birth = datetime.datetime.strptime(root.find('dob').text, '%d/%m/%Y')
         self.weight = float(root.find('weight').text) if root.find('weight').text != 'Unknown' else None
         self.height = float(root.find('height').text) if root.find('height').text != 'Unknown' else None
         self.country = root.find('country').text.strip() if root.find('country') else None
+        try:
+            self.date_of_birth = datetime.datetime.strptime(root.find('dob').text, '%d/%m/%Y')
+        except ValueError:
+            self.date_of_birth = datetime.datetime.strptime('01/01/1900', '%d/%m/%Y')
 
     def __repr__(self):
         return f'Player-{self.id}'
@@ -267,14 +270,21 @@ class Event(DBModel):
                 self.player_id = int(v)
                 # self.player = PlayerPool.get(v)
             elif k == 'other_player':
-                self.counterparty_id = int(v)
-                # self.counterparty = PlayerPool.get(v)
+                try:
+                    self.counterparty_id = int(v)
+                    # self.counterparty = PlayerPool.get(v)
+                except ValueError as e:
+                    logger.warn('Cannot convert counterparty_id {}, use default value None. err_msg: {}'.format(v, e))
             else:
                 try:
                     super().__setattr__(k, self.attr_key_type[k](v))
                 except KeyError as e:
                     logger.warn('Type of attr-key {} not been set yet, use str instead. err_msg: {}'.format(k, e))
                     super().__setattr__(k, v)
+                except ValueError as e:
+                    logger.warn('Cannot convert {} to {} when init {}. err_msg: {}'.format(v, self.attr_key_type[k],
+                                                                                           k, e))
+                    super().__setattr__(k, None)
 
         self.minsec = self.__dict__.get('minsec') or self.mins * 60 + self.secs
 
