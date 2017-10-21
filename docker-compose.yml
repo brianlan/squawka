@@ -1,0 +1,28 @@
+version: 3.2
+
+services:
+  # squawka_crawler:
+  mysql_db:
+    image: mariadb:10.2
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - vol_mysql_db:/var/lib/mysql
+    networks:
+      squawka:
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    ports:
+      - 8080:80
+    link: mysql_db:db
+    depends_on:
+      - mysql_db
+    networks:
+      squawka
+
+volumes:
+  vol_mysql_db:
+
+networks:
+  squawka:
