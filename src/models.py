@@ -57,6 +57,7 @@ class DBModel:
         elif isinstance(val, datetime.datetime):
             return f"'{datetime.datetime.strftime(val, '%Y-%m-%d %H:%M:%S')}'"
         else:
+            val = val.replace("'", "")
             return f"'{val}'"
 
     def _get_field_name_value_pairs(self, static_fields, pk, id_auto_increment):
@@ -113,7 +114,7 @@ class Player(DBModel):
         self.date_of_birth = datetime.datetime.strptime(root.find('dob').text, '%d/%m/%Y')
         self.weight = float(root.find('weight').text) if root.find('weight').text != 'Unknown' else None
         self.height = float(root.find('height').text) if root.find('height').text != 'Unknown' else None
-        self.country = root.find('country').text.strip()
+        self.country = root.find('country').text.strip() if root.find('country') else None
 
     def __repr__(self):
         return f'Player-{self.id}'

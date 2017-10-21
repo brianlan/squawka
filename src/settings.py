@@ -61,7 +61,7 @@ FULL_CONFIG = {
         'deploy': {
             'data_db': {
                 'host': 'localhost',
-                'port': 33306,
+                'port': 3306,
                 'username': AUTH['localhost_infra_mysql']['username'],
                 'password': AUTH['localhost_infra_mysql']['password']
             }

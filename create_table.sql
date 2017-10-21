@@ -1,6 +1,8 @@
 create table `league` (
     `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
-    `name` varchar(128),
+    `short_url_name` varchar(32),
+    `long_url_name` varchar(64),
+    `human_readable_name` varchar(128),
     `row_cre_ts` datetime DEFAULT current_timestamp(),
     PRIMARY KEY (`id`)
 );
