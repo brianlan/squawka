@@ -10,9 +10,11 @@ import yaml
 DEFAULT_SEASON = '2017'
 DEFAULT_LEAGUE = '-1'
 RESULT_URL_BASE = 'http://www.squawka.com/match-results'
-CHECK_LATEST_RESULT_PAGE = 1
+CHECK_LATEST_RESULT_PAGE = 3
 CHECK_LATEST_RESULT_INTERVAL = 30 * 60  # in seconds
 MATCH_CONSUME_INTERVAL = 60  # in seconds
+MAX_NUM_RETRY = 3
+RETRY_INTERVAL = 30
 
 #####################
 #  Load Auth file   #

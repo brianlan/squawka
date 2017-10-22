@@ -12,3 +12,7 @@ class UnrecognizedURLFormat(Error):
 
 class PageNumNotPresentInURL(Error):
     pass
+
+
+class ExceedsMaxRetry(Error):
+    pass

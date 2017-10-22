@@ -7,8 +7,8 @@ import xml.etree.ElementTree as ET
 
 from .error import UnrecognizedURLFormat, PageNumNotPresentInURL
 from .models import Match
-from .utils import jitter, get_league_name
-from .settings import RESULT_URL_BASE, MATCH_CONSUME_INTERVAL, logger
+from .utils import jitter, get_league_name, retry
+from .settings import RESULT_URL_BASE, MATCH_CONSUME_INTERVAL, MAX_NUM_RETRY, RETRY_INTERVAL, logger
 
 
 queue = asyncio.Queue()
@@ -100,8 +100,13 @@ async def process_entry_page(url, loop, latest=None):
     :return:
     """
     async with ClientSession(loop=loop) as sess:
-        async with sess.get(url) as resp:
-            cur_pg = ResultPage(url, await resp.text())
+
+        @retry(max_retry=MAX_NUM_RETRY, sec_to_sleep=RETRY_INTERVAL, logger=logger)
+        async def _get_result_page_content(sess, url):
+            async with sess.get(url) as resp:
+                return await resp.text()
+
+        cur_pg = ResultPage(url, await _get_result_page_content(sess, url))
 
         async def _enqueue_matches_of_page(pg, loop):
             [await enqueue_if_not_exist(m, loop) for m in pg.get_match_urls()]
@@ -112,9 +117,10 @@ async def process_entry_page(url, loop, latest=None):
         for pg_url in pg_urls:
             async with sess.get(pg_url) as resp:
                 await asyncio.sleep(jitter(15))
-                await _enqueue_matches_of_page(ResultPage(pg_url, await resp.text()), loop)
+                await _enqueue_matches_of_page(ResultPage(pg_url, await _get_result_page_content(sess, pg_url)), loop)
 
 
+@retry(max_retry=MAX_NUM_RETRY, sec_to_sleep=RETRY_INTERVAL, logger=logger)
 async def get_data_xml(match_url, loop):
     async with ClientSession(loop=loop) as sess:
         async with sess.get(match_url) as resp:
@@ -135,6 +141,7 @@ async def get_data_xml(match_url, loop):
 
 async def process_match(loop):
     while True:
+        num_trials = 1
         logger.info('Waiting for match url in queue...')
         url = await queue.get()
         logger.info('Consume match {} from queue. Start to process.'.format(url))
