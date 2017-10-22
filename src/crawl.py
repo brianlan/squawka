@@ -105,13 +105,11 @@ async def process_entry_page(url, loop, latest=None):
 
         max_pg_num = cur_pg.get_max_page_num()
         pg_urls = cur_pg.generate_result_urls(max_pg_num) if latest is None else cur_pg.generate_result_urls(latest)
-        result_pages = [cur_pg]
+        [await enqueue_if_not_exist(m, loop) for m in cur_pg.get_match_urls()]
         for pg_url in pg_urls:
             async with sess.get(pg_url) as resp:
-                result_pages.append(ResultPage(pg_url, await resp.text()))
                 await asyncio.sleep(jitter(15))
-
-        [await enqueue_if_not_exist(m, loop) for p in result_pages for m in p.get_match_urls()]
+                [await enqueue_if_not_exist(m, loop) for m in pg_url.get_match_urls()]
 
 
 async def get_data_xml(match_url, loop):

@@ -15,6 +15,8 @@ def get_league_name(match_url, short=True):
     _correction = {
         'ligue-1': 'ligue1',
         'b-liga': 'bliga',
+        'la-liga': 'laliga',
+        'serie-a': 'seriea',
     }
 
     pat = r'^http.+//(.+).squawka\.com/.*' if short else r'^http.+//.+.squawka\.com/([a-zA-Z_-]+)/'
