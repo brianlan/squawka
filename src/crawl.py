@@ -39,7 +39,7 @@ class ResultPage:
             pg_num_str = url[pg_pos+3:]
             return int(pg_num_str)
         except ValueError as e:
-            raise UnrecognizedURLFormat(f'Cannot convert {pg_num_str} to int in {last_page_url}. err_msg: {e}')
+            raise UnrecognizedURLFormat(f'Cannot convert {pg_num_str} to int in {url}. err_msg: {e}')
 
     @property
     def url(self):
@@ -91,33 +91,40 @@ async def enqueue_if_not_exist(match_url, loop):
         logger.info('Put match {} into the queue.'.format(match_url))
 
 
-async def process_entry_page(url, loop, latest=None):
-    """process_result_page
+@retry(max_retry=MAX_NUM_RETRY, sec_to_sleep=RETRY_INTERVAL, logger=logger)
+async def get_result_page_content(sess, url):
+    async with sess.get(url) as resp:
+        return await resp.text()
 
-    :param url:
+
+async def enqueue_matches(match_urls, loop, one_off=False):
+    [await enqueue_if_not_exist(m, loop) for m in match_urls]
+    if one_off:
+        await queue.put(None)
+
+
+async def produce_matches(result_page_url, loop, latest=None, one_off=False):
+    """produce matches from result page url
+
+    :param result_page_url:
     :param loop:
     :param latest: if None, will process all pages, otherwise will only process latest several days that been given.
+    :param one_off: indicates whether the process should go in infinite schedules
     :return:
     """
     async with ClientSession(loop=loop) as sess:
+        cur_pg = ResultPage(result_page_url, await get_result_page_content(sess, result_page_url))
+        await enqueue_matches(cur_pg.get_match_urls(), loop)
 
-        @retry(max_retry=MAX_NUM_RETRY, sec_to_sleep=RETRY_INTERVAL, logger=logger)
-        async def _get_result_page_content(sess, url):
-            async with sess.get(url) as resp:
-                return await resp.text()
-
-        cur_pg = ResultPage(url, await _get_result_page_content(sess, url))
-
-        async def _enqueue_matches_of_page(pg, loop):
-            [await enqueue_if_not_exist(m, loop) for m in pg.get_match_urls()]
-
-        max_pg_num = cur_pg.get_max_page_num()
-        pg_urls = cur_pg.generate_result_urls(max_pg_num) if latest is None else cur_pg.generate_result_urls(latest)
-        await _enqueue_matches_of_page(cur_pg, loop)
-        for pg_url in pg_urls:
-            async with sess.get(pg_url) as resp:
+        if one_off:
+            await queue.put(None)
+        else:
+            max_pg_num = cur_pg.get_max_page_num()
+            pg_urls = cur_pg.generate_result_urls(max_pg_num) if latest is None else cur_pg.generate_result_urls(latest)
+            for pg_url in pg_urls:
                 await asyncio.sleep(jitter(15))
-                await _enqueue_matches_of_page(ResultPage(pg_url, await _get_result_page_content(sess, pg_url)), loop)
+                pg = ResultPage(pg_url, await get_result_page_content(sess, pg_url))
+                await enqueue_matches(pg.get_match_urls(), loop)
 
 
 @retry(max_retry=MAX_NUM_RETRY, sec_to_sleep=RETRY_INTERVAL, logger=logger)
@@ -141,14 +148,23 @@ async def get_data_xml(match_url, loop):
 
 async def process_match(loop):
     while True:
-        num_trials = 1
         logger.info('Waiting for match url in queue...')
         url = await queue.get()
+
+        if url is None:
+            logger.info('Stop signal received. End process_match.')
+            break
+
         logger.info('Consume match {} from queue. Start to process.'.format(url))
         match_id, root = await get_data_xml(url, loop)
-        match = Match(url, root, match_id)
-        await match.save(loop)
-        logger.info('Match {} is done.'.format(url))
+
+        if root.tag == 'Error':
+            logger.warn('Data of match {} not ready yet. Skip this time.'.format(url))
+        else:
+            match = Match(url, root, match_id)
+            await match.save(loop)
+            logger.info('Match {} is done.'.format(url))
+
         queue.task_done()
         logger.info('Sleep for a while...')
         await asyncio.sleep(jitter(MATCH_CONSUME_INTERVAL))
