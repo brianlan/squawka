@@ -23,7 +23,7 @@ if __name__ == '__main__':
     elif args.mode == 'result':
         tasks.append(produce_matches(args.related_url, loop, latest=1, one_off=True))
     elif args.mode == 'daemon':
-        tasks.append(produce_matches(args.entry_url, loop, latest=args.num_latest_pages))
+        tasks.append(produce_matches(args.related_url, loop, latest=args.num_latest_pages))
 
     loop.run_until_complete(asyncio.wait(tasks))
     loop.close()
