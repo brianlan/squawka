@@ -97,7 +97,10 @@ class DBModel:
 
 class Coordinate:
     def __init__(self, x0, x1):
-        self.x = None if x0 is None else float(x0), None if x1 is None else float(x1)
+        def _is_missing(v):
+            return v is None or v == ''
+
+        self.x = None if _is_missing(x0) else float(x0), None if _is_missing(x1) else float(x1)
 
     def __repr__(self):
         return f'({self.x[0]}, {self.x[1]})'
